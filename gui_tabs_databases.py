@@ -2,48 +2,64 @@ import time
 import gc
 import json
 from pathlib import Path
-import multiprocessing
 import yaml
 from PySide6.QtCore import QDir, QRegularExpression, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QAction, QRegularExpressionValidator
 from PySide6.QtWidgets import QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QMessageBox, QTreeView, QFileSystemModel, QMenu, QGroupBox, QLineEdit, QGridLayout, QSizePolicy, QComboBox, QToolButton
 
-from vector_db_creator import create_vector_db_in_process
+# REMOVED: from vector_db_creator import create_vector_db_in_process
 from choose_documents_and_vector_model import choose_documents_directory
 from utilities import check_preconditions_for_db_creation, open_file, delete_file, backup_database_incremental, my_cprint
 from download_model import model_downloaded_signal
 from constants import TOOLTIPS
 from config import get_config
-from process_manager import get_process_manager
+# REMOVED: from process_manager import get_process_manager
 
 
-class CreateDatabaseProcess:
+class VectorDBWorker(QThread):
+    """Worker thread for creating vector databases without subprocess issues."""
+    finished = Signal(bool, str)  # (success, message)
+    progress = Signal(str)        # status updates
+
     def __init__(self, database_name, parent=None):
+        super().__init__(parent)
         self.database_name = database_name
-        self.process = None
+        self._is_cancelled = False
 
-    def start(self):
-        self.process = multiprocessing.Process(target=create_vector_db_in_process, args=(self.database_name,))
-        get_process_manager().register(self.process)
-        self.process.start()
+    def run(self):
+        """Run database creation in a separate thread (same process, so CUDA works)."""
+        try:
+            # Import here to avoid circular imports and ensure clean state
+            from vector_db_creator import CreateVectorDB
+            
+            self.progress.emit("Initializing database creation...")
+            
+            create_vector_db = CreateVectorDB(database_name=self.database_name)
+            create_vector_db.run()
+            
+            if not self._is_cancelled:
+                self.finished.emit(True, "Database created successfully!")
+            
+        except FileExistsError as e:
+            self.finished.emit(False, str(e))
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.finished.emit(False, f"Database creation failed: {str(e)}")
+        finally:
+            # Cleanup GPU memory
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+            except Exception:
+                pass
+            gc.collect()
 
-    def wait(self, timeout=None):
-        if self.process:
-            self.process.join(timeout)
-            if timeout and self.process.is_alive():
-                return False
-            return True
-        return True
-
-    def is_alive(self):
-        if self.process:
-            return self.process.is_alive()
-        return False
-
-    def terminate(self):
-        if self.process:
-            get_process_manager().cleanup_one(self.process, timeout=2.0)
-            self.process = None
+    def cancel(self):
+        """Request cancellation (note: won't stop mid-embedding)."""
+        self._is_cancelled = True
 
 
 class CustomFileSystemModel(QFileSystemModel):
@@ -103,9 +119,8 @@ class DatabasesTab(QWidget):
         self.layout.addLayout(hbox2)
         self.sync_combobox_with_config()
         
-        self.db_process = None
-        self.process_timer = QTimer()
-        self.process_timer.timeout.connect(self.check_process_status)
+        # CHANGED: Use worker thread instead of process
+        self.db_worker = None
         self.current_model_name = None
         self.current_database_name = None
         self.process_start_time = None
@@ -282,40 +297,26 @@ class DatabasesTab(QWidget):
                 self._validation_failed(msg)
                 return
 
-            self.db_process = CreateDatabaseProcess(database_name)
-            self.db_process.start()
-            self.process_start_time = time.time()
-
-            self.process_timer.start(500)
+            # CHANGED: Use QThread worker instead of multiprocessing
+            self.db_worker = VectorDBWorker(database_name, parent=self)
+            self.db_worker.progress.connect(self.on_worker_progress)
+            self.db_worker.finished.connect(self.on_worker_finished)
+            self.db_worker.start()
             
+            self.process_start_time = time.time()
             my_cprint(f"Started database creation for: {database_name}", "green")
 
         except Exception as e:
             self._validation_failed(f"Failed to start database creation: {str(e)}")
 
-    def check_process_status(self):
-        if not self.db_process:
-            self.process_timer.stop()
-            return
+    def on_worker_progress(self, message):
+        """Handle progress updates from the worker thread."""
+        my_cprint(message, "cyan")
 
-        if self.db_process.is_alive():
-            return
-
-        self.process_timer.stop()
-
+    def on_worker_finished(self, success, message):
+        """Handle completion of the worker thread."""
         try:
-            exit_code = self.db_process.process.exitcode if self.db_process.process else -1
-
-            completed = self.db_process.wait(timeout=5.0)
-
-            if not completed:
-                my_cprint("Database creation process did not complete cleanly - forcing termination", "red")
-                self.db_process.terminate()
-                QMessageBox.critical(self, "Error", "Database process hung and was terminated.")
-                self.reenable_create_db_button()
-                return
-
-            if exit_code == 0:
+            if success:
                 my_cprint(f"{self.current_model_name} removed from memory.", "red")
 
                 config = get_config()
@@ -328,6 +329,7 @@ class DatabasesTab(QWidget):
 
                 backup_database_incremental(self.current_database_name)
 
+                # Refresh the docs view
                 if hasattr(self, 'docs_model') and self.docs_model:
                     docs_path = str(config.docs_dir)
                     self.docs_model.setRootPath("")
@@ -335,20 +337,27 @@ class DatabasesTab(QWidget):
                     if hasattr(self, 'docs_view') and self.docs_view:
                         self.docs_view.setRootIndex(self.docs_model.index(docs_path))
 
-                QMessageBox.information(self, "Success", "Database created successfully!")
+                QMessageBox.information(self, "Success", message)
             else:
-                err_msg = (f"Database build failed (exit code {exit_code}). "
-                           "Check the log window for details.")
-                QMessageBox.critical(self, "Error", err_msg)
+                QMessageBox.critical(self, "Error", message)
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error checking process status: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error in completion handler: {str(e)}")
 
         finally:
-            if self.db_process:
-                self.db_process.terminate()
-            self.db_process = None
+            self._cleanup_worker()
             self.reenable_create_db_button()
+
+    def _cleanup_worker(self):
+        """Clean up the worker thread."""
+        if self.db_worker:
+            if self.db_worker.isRunning():
+                self.db_worker.cancel()
+                self.db_worker.wait(5000)  # Wait up to 5 seconds
+                if self.db_worker.isRunning():
+                    self.db_worker.terminate()
+                    self.db_worker.wait()
+            self.db_worker = None
 
     def reenable_create_db_button(self):
         self.create_db_button.setDisabled(False)
@@ -363,13 +372,17 @@ class DatabasesTab(QWidget):
         gc.collect()
 
     def closeEvent(self, event):
-        if self.db_process and self.db_process.is_alive():
-            self.db_process.terminate()
-        if hasattr(self, 'process_timer'):
-            self.process_timer.stop()
+        # CHANGED: Clean up worker thread instead of process
+        self._cleanup_worker()
         if hasattr(self, 'docs_refresh'):
             self.docs_refresh.stop()
         event.accept()
+
+    def cleanup(self):
+        """Called by parent window on close."""
+        self._cleanup_worker()
+        if hasattr(self, 'docs_refresh'):
+            self.docs_refresh.stop()
 
     def toggle_group_box(self, group_box, checked):
         self.groups[group_box] = 1 if checked else 0

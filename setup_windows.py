@@ -21,9 +21,7 @@ import time
 import tkinter as tk
 from tkinter import messagebox
 from replace_sourcecode import (
-    replace_sentence_transformer_file,
     add_cuda_files,
-    check_embedding_model_dimensions,
 )
 
 from constants import priority_libs, libs, full_install_libs
@@ -247,9 +245,7 @@ from utilities import clean_triton_cache
 clean_triton_cache()
 
 # 7. replace sourcode files
-replace_sentence_transformer_file()
 add_cuda_files()
-check_embedding_model_dimensions()
 
 # 8. Create directores if needed
 def create_directory_structure():

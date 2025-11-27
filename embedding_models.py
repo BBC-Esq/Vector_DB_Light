@@ -32,6 +32,7 @@ def _get_prompt_for_family(family: str, is_query: bool = False) -> str:
     else:
         return ""
 
+
 def _validate_and_clean_texts(texts: list) -> list[str]:
     for idx, text in enumerate(texts):
         if text is None:
@@ -48,6 +49,7 @@ def _validate_and_clean_texts(texts: list) -> list[str]:
             texts[idx] = texts[idx].strip() or " "
 
     return texts
+
 
 class DirectEmbeddingModel:
     def __init__(
@@ -104,6 +106,8 @@ class DirectEmbeddingModel:
             tokenizer_kwargs=tokenizer_kwargs,
         )
 
+        self.model.to(self.device)
+
         logger.info(f"Model loaded successfully on {self.device}")
         logger.info(f"  - Dtype: {self.dtype}")
         logger.info(f"  - Batch size: {self.batch_size}")
@@ -118,49 +122,39 @@ class DirectEmbeddingModel:
             'normalize_embeddings': True,
             'convert_to_numpy': True,
             'show_progress_bar': True,
+            'device': self.device,
         }
-        
+
         logger.debug(f"Embedding {len(texts)} documents...")
-        all_embeddings = []
 
-        for start in range(0, len(texts), self.batch_size):
-            batch = texts[start:start + self.batch_size]
-            try:
-                batch_embs = self.model.encode(batch, **encode_kwargs)
-                for emb in batch_embs:
-                    all_embeddings.append(emb.tolist())
-                continue
-            except ValueError as e:
-                logger.error(
-                    f"Embedding failed for batch [{start}:{start + len(batch)}]: {e}"
-                )
-                logger.error(
-                    "Falling back to per-item encoding to isolate bad texts."
-                )
-                for offset, text in enumerate(batch):
-                    global_idx = start + offset
-                    try:
-                        single_emb = self.model.encode(
-                            [text],
-                            batch_size=1,
-                            normalize_embeddings=True,
-                            convert_to_numpy=True,
-                            show_progress_bar=False,
-                        )
-                        all_embeddings.append(single_emb[0].tolist())
-                    except ValueError as e_single:
-                        preview = repr(text)
-                        if len(preview) > 200:
-                            preview = preview[:200] + "..."
-                        logger.error(
-                            "Skipping problematic text at index %d: %s",
-                            global_idx,
-                            e_single,
-                        )
-                        logger.error("Problematic text preview: %s", preview)
+        try:
+            embeddings = self.model.encode(texts, **encode_kwargs)
+            return [emb.tolist() for emb in embeddings]
 
-        return all_embeddings
+        except Exception as e:
+            logger.error(f"Batch encoding failed: {e}")
+            logger.error("Falling back to single-text encoding...")
 
+            all_embeddings = []
+            for idx, text in enumerate(texts):
+                try:
+                    single_emb = self.model.encode(
+                        [text],
+                        batch_size=1,
+                        normalize_embeddings=True,
+                        convert_to_numpy=True,
+                        show_progress_bar=False,
+                        device=self.device,
+                    )
+                    all_embeddings.append(single_emb[0].tolist())
+                except Exception as e_single:
+                    preview = repr(text)
+                    if len(preview) > 200:
+                        preview = preview[:200] + "..."
+                    logger.error(f"Skipping text at index {idx}: {e_single}")
+                    logger.error(f"Problematic text preview: {preview}")
+
+            return all_embeddings
 
     def embed_query(self, text: str) -> list[float]:
         if self.prompt:
@@ -171,6 +165,7 @@ class DirectEmbeddingModel:
             'normalize_embeddings': True,
             'convert_to_numpy': True,
             'show_progress_bar': False,
+            'device': self.device,
         }
 
         embedding = self.model.encode(

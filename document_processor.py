@@ -5,7 +5,7 @@ import logging
 import warnings
 import math
 from pathlib import Path, PurePath
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from langchain_core.documents import Document
 from langchain_community.document_loaders import (
     PyMuPDFLoader,
@@ -227,7 +227,7 @@ def load_documents(source_dir: Path) -> list:
 
         executor = None
         try:
-            executor = ProcessPoolExecutor(n_workers)
+            executor = ThreadPoolExecutor(n_workers)
             futures = [executor.submit(load_single_document, path) for path in doc_paths]
             for future in as_completed(futures):
                 try:

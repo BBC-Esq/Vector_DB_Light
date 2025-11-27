@@ -124,6 +124,16 @@ class CreateVectorDB:
 
             logger.info(f"Total chunks to embed: {len(all_texts)}")
 
+            logger.info("Cleaning text before embedding...")
+            all_texts = [
+                "".join(
+                    char for char in text
+                    if char == "\n" or char == "\t" or (32 <= ord(char) < 127)
+                )
+                for text in all_texts
+            ]
+            logger.info("Text cleaning completed.")
+
             embedding_start_time = time.time()
 
             with cuda_mgr.cuda_operation():

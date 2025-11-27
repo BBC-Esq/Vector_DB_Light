@@ -85,10 +85,6 @@ class DependencyUpdater:
             print(f"| {row.ljust(table_width - 4)} |")
         print(border)
 
-def replace_sentence_transformer_file():
-    updater = DependencyUpdater()
-    updater.update_file_in_dependency("Assets", "SentenceTransformer.py", ["sentence_transformers"])
-
 def add_cuda_files():
     updater = DependencyUpdater()
 
@@ -133,42 +129,9 @@ def add_cuda_files():
     except Exception as e:
         updater.print_status("ERROR", f"Unexpected error during extraction: {str(e)}")
 
-def check_embedding_model_dimensions():
-    import yaml
-    updater = DependencyUpdater()
-    config_path = Path(__file__).parent / "config.yaml"
-
-    if not config_path.exists():
-        updater.print_status("ERROR", "config.yaml not found in current directory.")
-        return
-
-    try:
-        with open(config_path, 'r') as file:
-            config = yaml.safe_load(file)
-
-        if config is None:
-            config = {}
-
-        if 'EMBEDDING_MODEL_DIMENSIONS' not in config:
-            config['EMBEDDING_MODEL_DIMENSIONS'] = None
-            with open(config_path, 'w') as file:
-                yaml.dump(config, file, default_flow_style=False)
-            updater.print_status("SUCCESS", "Added EMBEDDING_MODEL_DIMENSIONS: null to config.yaml")
-        else:
-            updater.print_status("SKIP", "EMBEDDING_MODEL_DIMENSIONS already exists in config.yaml")
-
-    except yaml.YAMLError as e:
-        updater.print_status("ERROR", f"Error parsing config.yaml: {str(e)}")
-    except Exception as e:
-        updater.print_status("ERROR", f"Unexpected error while processing config.yaml: {str(e)}")
-
 if __name__ == "__main__":
     DependencyUpdater.print_ascii_table("DEPENDENCY UPDATER", [
-        "Replace Sentence Transformer File",
         "Add CUDA Files",
-        "Check Config EMBEDDING_MODEL_DIMENSIONS"
     ])
 
-    replace_sentence_transformer_file()
     add_cuda_files()
-    check_embedding_model_dimensions()
