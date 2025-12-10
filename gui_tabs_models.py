@@ -62,11 +62,11 @@ class VectorModelsTab(QWidget):
            group_layout.setHorizontalSpacing(0)
            group_box.setLayout(group_layout)
            group_layout.setContentsMargins(0, 10, 0, 0)
-           
+
            size_policy = group_box.sizePolicy()
            size_policy.setVerticalStretch(self.stretch_factors.get(vendor, 1))
            group_box.setSizePolicy(size_policy)
-           
+
            self.group_boxes[vendor] = group_box
 
            for col, header in enumerate(headers):
@@ -169,7 +169,7 @@ class VectorModelsTab(QWidget):
                                break
                    self.refresh_gui()
                    return
-       
+
        print(f"Model {model_name} not found in VECTOR_MODELS")
 
     def refresh_gui(self):

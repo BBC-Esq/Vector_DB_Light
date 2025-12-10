@@ -153,7 +153,7 @@ class AppConfig(BaseSettings):
                 obj = getattr(obj, part)
             setattr(obj, parts[-1], value)
             self.save()
-    
+
     def update_setting(self, field_path: str, value: Any) -> tuple[bool, str]:
         try:
             self.update_field(field_path, value)
@@ -176,6 +176,8 @@ class AppConfig(BaseSettings):
             del self.created_databases[name]
             self.save()
 
+    def get_user_databases(self) -> list[str]:
+        return [name for name in self.created_databases.keys() if name != "user_manual"]
 
 _config_instance: Optional[AppConfig] = None
 _config_lock = threading.Lock()

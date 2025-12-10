@@ -42,8 +42,8 @@ import numpy as np
 import tiledb.vector_search as vs
 
 from config import get_config
-from embedding_models import create_embedding_model
-from utilities import get_model_native_precision, get_embedding_dtype_and_batch, configure_logging
+from embedding_models import load_embedding_model
+from utilities import configure_logging
 from cuda_manager import get_cuda_manager
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ class QueryVectorDB:
             raise ValueError("No vector database selected.")
         if selected_database not in self.config.created_databases:
             raise ValueError(f'Database "{selected_database}" not found in config.')
-        
+
         db_path = self.config.vector_db_dir / selected_database
         if not db_path.exists():
             raise FileNotFoundError(f'Database folder "{selected_database}" is missing on disk.')
@@ -124,25 +124,12 @@ class QueryVectorDB:
     def initialize_vector_model(self):
         model_path = self.config.created_databases[self.selected_database].model
         self.model_name = os.path.basename(model_path)
-        
-        compute_device = self.config.Compute_Device.database_query
-        use_half = self.config.database.half
-        model_native_precision = get_model_native_precision(self.model_name)
 
-        dtype, batch_size = get_embedding_dtype_and_batch(
-            compute_device=compute_device,
-            use_half=use_half,
-            model_native_precision=model_native_precision,
-            model_name=self.model_name,
-            is_query=True
-        )
-
-        return create_embedding_model(
+        return load_embedding_model(
             model_path=model_path,
-            compute_device=compute_device,
-            dtype=dtype,
-            batch_size=batch_size,
-            is_query=True
+            compute_device=self.config.Compute_Device.database_query,
+            use_half=self.config.database.half,
+            is_query=True,
         )
 
     @torch.inference_mode()
@@ -306,7 +293,7 @@ class QueryVectorDB:
 def get_query_db(database_name: str) -> QueryVectorDB:
     if not hasattr(_thread_local, 'query_db_cache'):
         _thread_local.query_db_cache = {}
-    
+
     if database_name in _thread_local.query_db_cache:
         cached_db = _thread_local.query_db_cache[database_name]
         logger.debug(f"Reusing thread-local QueryVectorDB for {database_name}")
@@ -321,7 +308,7 @@ def get_query_db(database_name: str) -> QueryVectorDB:
 def clear_query_cache(database_name: Optional[str] = None):
     if not hasattr(_thread_local, 'query_db_cache'):
         return
-    
+
     if database_name:
         if database_name in _thread_local.query_db_cache:
             logger.info(f"Clearing thread-local cache for {database_name}")

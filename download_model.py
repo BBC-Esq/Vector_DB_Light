@@ -21,7 +21,6 @@ MODEL_DIRECTORIES = {
    "vector": "vector",
 }
 
-# @functools.lru_cache(maxsize=1)
 def get_hf_token():
     try:
         config = get_config()
@@ -192,7 +191,7 @@ class ModelDownloader(QObject):
                'allow_patterns': allow_patterns,
                'etag_timeout': 10
            }
-           
+
            if repo_type == "gated" and self.hf_token:
                download_kwargs['token'] = self.hf_token
            elif repo_type == "public":

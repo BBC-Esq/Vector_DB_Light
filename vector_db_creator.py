@@ -16,11 +16,10 @@ import numpy as np
 from document_processor import load_documents, split_documents
 from utilities_core import (
     my_cprint,
-    get_model_native_precision,
-    get_embedding_dtype_and_batch,
     set_cuda_paths,
     configure_logging,
 )
+from embedding_models import load_embedding_model
 from embedding_models import create_embedding_model
 from config import get_config
 from sqlite_operations import create_metadata_db
@@ -61,31 +60,13 @@ class CreateVectorDB:
 
     @torch.inference_mode()
     def initialize_vector_model(self, embedding_model_name, config_data):
-        compute_device = config_data.Compute_Device.database_creation
-        use_half = config_data.database.half
-        model_name = os.path.basename(embedding_model_name)
-        model_native_precision = get_model_native_precision(model_name)
-
-        dtype, batch_size = get_embedding_dtype_and_batch(
-            compute_device=compute_device,
-            use_half=use_half,
-            model_native_precision=model_native_precision,
-            model_name=model_name,
-            is_query=False
-        )
-
-        model = create_embedding_model(
+        return load_embedding_model(
             model_path=embedding_model_name,
-            compute_device=compute_device,
-            dtype=dtype,
-            batch_size=batch_size,
-            is_query=False
+            compute_device=config_data.Compute_Device.database_creation,
+            use_half=config_data.database.half,
+            is_query=False,
+            verbose=True,
         )
-
-        precision = "float32" if dtype is None else str(dtype).split('.')[-1]
-        my_cprint(f"{model_name} ({precision}) loaded using a batch size of {batch_size}.", "green")
-
-        return model
 
     @torch.inference_mode()
     def create_database(self, texts, embeddings):

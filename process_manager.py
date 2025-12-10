@@ -44,15 +44,15 @@ class ProcessManager:
             logger.debug(f"Terminating process {process.pid}")
             process.terminate()
             process.join(timeout=timeout)
-            
+
             if process.is_alive():
                 logger.warning(f"Process {process.pid} did not terminate, killing")
                 process.kill()
                 process.join(timeout=1.0)
-            
+
             if hasattr(process, 'close'):
                 process.close()
-            
+
             self.unregister(process)
             return not process.is_alive()
         except Exception as e:
@@ -62,10 +62,10 @@ class ProcessManager:
     def cleanup_all(self, timeout: float = 5.0):
         with self.lock:
             processes_copy = self.processes[:]
-        
+
         for process in processes_copy:
             self.cleanup_one(process, timeout)
-        
+
         with self.lock:
             remaining = len(self.processes)
             if remaining > 0:

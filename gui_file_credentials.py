@@ -1,5 +1,4 @@
 # gui_file_credentials.py
-from pathlib import Path
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QVBoxLayout,
                               QLabel, QLineEdit, QPushButton, QMessageBox)
 import yaml
@@ -13,7 +12,6 @@ from config import get_config
 class CredentialManager(ABC):
     def __init__(self, parent_widget):
         self.parent_widget = parent_widget
-        self.config_file_path = Path(__file__).parent / 'config.yaml'
         self.config = self._load_config()
 
     def _load_config(self) -> 'AppConfig':

@@ -231,3 +231,37 @@ def create_embedding_model(
         max_seq_length=max_seq_length,
         prompt=prompt,
     )
+
+def load_embedding_model(
+    model_path: str,
+    compute_device: str,
+    use_half: bool,
+    is_query: bool = False,
+    verbose: bool = False,
+) -> DirectEmbeddingModel:
+
+    model_name = os.path.basename(model_path)
+    model_native_precision = get_model_native_precision(model_name)
+    
+    dtype, batch_size = get_embedding_dtype_and_batch(
+        compute_device=compute_device,
+        use_half=use_half,
+        model_native_precision=model_native_precision,
+        model_name=model_name,
+        is_query=is_query,
+    )
+
+    model = create_embedding_model(
+        model_path=model_path,
+        compute_device=compute_device,
+        dtype=dtype,
+        batch_size=batch_size,
+        is_query=is_query,
+    )
+
+    if verbose:
+        from utilities_core import my_cprint
+        precision = "float32" if dtype is None else str(dtype).split('.')[-1]
+        my_cprint(f"{model_name} ({precision}) loaded using a batch size of {batch_size}.", "green")
+
+    return model

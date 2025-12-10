@@ -76,7 +76,6 @@ def format_citations(metadata_list):
 
     return f"<ol>{list_items}</ol>"
 
-
 def backup_database_incremental(new_database_name):
     import shutil
     import logging
@@ -105,7 +104,6 @@ def backup_database_incremental(new_database_name):
     except Exception as e:
         logger.error(f"Backup failed: {e}")
 
-
 def open_file(file_path):
     try:
         if platform.system() == "Windows":
@@ -117,13 +115,18 @@ def open_file(file_path):
     except OSError:
         QMessageBox.warning(None, "Error", "No default viewer detected.")
 
+def open_settings_dialog():
+    from PySide6.QtWidgets import QApplication
+    for widget in QApplication.topLevelWidgets():
+        if hasattr(widget, "show_settings_dialog") and callable(widget.show_settings_dialog):
+            widget.show_settings_dialog()
+            break
 
 def delete_file(file_path):
     try:
         os.remove(file_path)
     except OSError:
         QMessageBox.warning(None, "Unable to delete file(s), please delete manually.")
-
 
 def check_preconditions_for_db_creation(database_name, skip_ocr=False):
     import torch

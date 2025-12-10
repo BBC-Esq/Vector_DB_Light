@@ -1,12 +1,11 @@
 import logging
-from pathlib import Path
 import multiprocessing
 import re
 import html
 import queue
 import threading
 
-from PySide6.QtCore import QThread, Signal, QObject, Qt, QUrl
+from PySide6.QtCore import QThread, Signal, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QTextEdit, QPushButton, QCheckBox, QHBoxLayout,
@@ -19,6 +18,8 @@ from constants import TOOLTIPS
 from vector_db_query import process_chunks_only_query
 from config import get_config
 from process_manager import get_process_manager
+from gui_common_widgets import RefreshingComboBox
+from utilities import open_settings_dialog
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +109,7 @@ class ChunksOnlyThread(QThread):
                                 self.process.join(timeout=1)
                             except Exception as e:
                                 logger.error(f"Failed to kill process: {e}")
-                    
+
                 if self.process:
                     get_process_manager().unregister(self.process)
                     self.process = None
@@ -148,13 +149,6 @@ class ChunksOnlyThread(QThread):
                     self.process = None
 
 
-class GuiSignals(QObject):
-    response_signal = Signal(str)
-    citations_signal = Signal(str)
-    error_signal = Signal(str)
-    finished_signal = Signal()
-
-
 class CustomTextBrowser(QTextBrowser):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -162,27 +156,10 @@ class CustomTextBrowser(QTextBrowser):
         self.anchorClicked.connect(QDesktopServices.openUrl)
 
 
-class RefreshingComboBox(QComboBox):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.parent_tab = parent
-
-    def showPopup(self):
-        if self.parent_tab:
-            current_selection = self.currentText()
-            self.parent_tab.refresh_database_list()
-            index = self.findText(current_selection)
-            if index >= 0:
-                self.setCurrentIndex(index)
-        super().showPopup()
-
-
 class DatabaseQueryTab(QWidget):
     def __init__(self):
         super(DatabaseQueryTab, self).__init__()
-        self.config_path = Path(__file__).resolve().parent / 'config.yaml'
         self.llm_chat_thread = None
-        self.gui_signals = GuiSignals()
         self.database_query_thread = None
         self.raw_response = ""
         self.citations_block = ""
@@ -197,8 +174,11 @@ class DatabaseQueryTab(QWidget):
 
         hbox1 = QHBoxLayout()
 
-        self.database_pulldown = RefreshingComboBox(self)
-        self.database_pulldown.addItems(self.load_created_databases())
+        self.database_pulldown = RefreshingComboBox(
+            parent=self,
+            get_items=lambda: get_config().get_user_databases(),
+        )
+        self.database_pulldown.addItems(get_config().get_user_databases())
         self.database_pulldown.setToolTip(TOOLTIPS["DATABASE_SELECT"])
         hbox1.addWidget(self.database_pulldown)
 
@@ -218,7 +198,7 @@ class DatabaseQueryTab(QWidget):
         self.query_settings_btn = QToolButton()
         self.query_settings_btn.setText("⚙")
         self.query_settings_btn.setToolTip("Open Database Query settings")
-        self.query_settings_btn.clicked.connect(self._open_settings_dialog)
+        self.query_settings_btn.clicked.connect(open_settings_dialog)
         hbox1.addWidget(self.query_settings_btn)
 
         layout.addLayout(hbox1)
@@ -243,22 +223,6 @@ class DatabaseQueryTab(QWidget):
         hbox2.addWidget(self.submit_button)
 
         layout.addLayout(hbox2)
-
-    def _open_settings_dialog(self):
-        for w in QApplication.topLevelWidgets():
-            if hasattr(w, "show_settings_dialog") and callable(w.show_settings_dialog):
-                w.show_settings_dialog()
-                break
-
-    def load_created_databases(self):
-        config = get_config()
-        databases = list(config.created_databases.keys())
-        return [db for db in databases if db != "user_manual"]
-
-    def refresh_database_list(self):
-        databases = self.load_created_databases()
-        self.database_pulldown.clear()
-        self.database_pulldown.addItems(databases)
 
     def _render_html(self):
         body = html.escape(self.raw_response).replace("\n", "<br>")
